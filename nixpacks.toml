@@ -1,0 +1,15 @@
+{
+  "message": "Starting Container",
+  "severity": "info",
+  "attributes": {
+    "level": "info"
+  },
+  "tags": {
+    "project": "5f76ed86-ce39-4535-890b-6be44c0ebaf1",
+    "environment": "234a3e27-7417-42d7-aed4-03a7af3dcfb2",
+    "service": "f01aac98-95fd-429b-a13e-1581734e50f4",
+    "deployment": "dc12821c-8c3f-41e6-873b-39fa7bcb063b",
+    "replica": "38bf6e82-ea23-4670-878d-627af2603433"
+  },
+  "timestamp": "2026-05-05T12:25:13.133661616Z"
+}
