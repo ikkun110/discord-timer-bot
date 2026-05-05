@@ -55,7 +55,7 @@ client.on(Events.InteractionCreate, async (i) => {
     } else if (act==="cur") {
       if (!t||t.type!=="up"||t.running){await i.reply({content:"⚠️ すでに動いています。",ephemeral:true});return;}
       t.t0=Date.now(); t.running=true;
-      t.iv=setInterval(async()=>{if(!t.msg||!t.running)return;await editLive(t.msg,{embeds:[upEmbed(t)],components:[upRow(id,true)]});},3000);
+            t.iv=setInterval(async()=>{if(!t.msg||!t.running)return;await editLive(t.msg,{embeds:[upEmbed(t)],components:[upRow(id,true)]});},1000);
       await i.update({embeds:[upEmbed(t)],components:[upRow(id,true)]});
     } else if (act==="cux") {
       if(t?.iv) clearInterval(t.iv); timers.delete(id);
