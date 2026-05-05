@@ -6,13 +6,25 @@ const timers = new Map();
 const fmt = (s) => { s = Math.abs(Math.floor(s)); const h=Math.floor(s/3600), m=Math.floor((s%3600)/60), ss=s%60; return h ? `${h}:${String(m).padStart(2,"0")}:${String(ss).padStart(2,"0")}` : `${m}:${String(ss).padStart(2,"0")}`; };
 const parse = (t) => { let m; if (m=t.match(/^(\d+):(\d{2}):(\d{2})$/)) return +m[1]*3600 + +m[2]*60 + +m[3]; if (m=t.match(/^(\d+):(\d{2})$/)) return +m[1]*60 + +m[2]; const s=+t; return s>0?s:null; };
 const elapsed = (t) => t.running ? t.e + Math.floor((Date.now()-t.t0)/1000) : t.e;
-const remain = (t) => t.running ? Math.max(0, Math.ceil((t.end-Date.now())/1000)) : Math.max(0,t.total);
+const remain = (t) => t.running ? Math.max(0, Math.ceil((t.end-Date.now())/1000)) : Math.max(0, t.remaining);
 const bar = (c,tot,n=12) => { const f=Math.round(Math.max(0,Math.min(1,c/tot))*n); return "█".repeat(f)+"░".repeat(n-f); };
 
 const upEmbed = (t) => new EmbedBuilder().setColor(t.running?Colors.Green:Colors.Yellow).setTitle(`⏱️ ストップウォッチ — ${t.running?"計測中":"一時停止中"}`).addFields({name:"経過時間",value:`\`\`\`${fmt(elapsed(t))}\`\`\``}).setFooter({text:t.running?"1秒ごとに更新":"一時停止中"});
-const downEmbed = (t, done=false) => { if(done) return new EmbedBuilder().setColor(Colors.Red).setTitle("⏰ カウントダウン終了！").setDescription(`**${fmt(t.total)}** が経過しました`).setFooter({text:"完了"}); const r=remain(t),p=r/t.total,c=p>.5?Colors.Green:p>.25?Colors.Yellow:Colors.Red; return new EmbedBuilder().setColor(c).setTitle("⏳ カウントダウン").addFields({name:"残り時間",value:`\`\`\`${fmt(r)}\`\`\``,inline:true},{name:"設定時間",value:`\`\`\`${fmt(t.total)}\`\`\``,inline:true}).addFields({name:"進捗",value:`\`${bar(r,t.total)}\` ${Math.round((1-p)*100)}%`}).setFooter({text:"1秒ごとに更新"}); };
-const upRow = (id, run) => new ActionRowBuilder().addComponents(run ? new ButtonBuilder().setCustomId(`cup:${id}`).setLabel("一時停止").setStyle(ButtonStyle.Primary).setEmoji("⏸️") : new ButtonBuilder().setCustomId(`cur:${id}`).setLabel("再開").setStyle(ButtonStyle.Success).setEmoji("▶️"), new ButtonBuilder().setCustomId(`cux:${id}`).setLabel("リセット").setStyle(ButtonStyle.Danger).setEmoji("🔄"));
-const downRow = (id) => new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`cds:${id}`).setLabel("停止").setStyle(ButtonStyle.Danger).setEmoji("⏹️"));
+const downEmbed = (t, done=false) => {
+  if (done) return new EmbedBuilder().setColor(Colors.Red).setTitle("⏰ カウントダウン終了！").setDescription(`**${fmt(t.total)}** が経過しました`).setFooter({text:"完了"});
+  const r=remain(t), p=r/t.total, c=p>.5?Colors.Green:p>.25?Colors.Yellow:Colors.Red;
+  return new EmbedBuilder().setColor(t.running?c:Colors.Yellow).setTitle(`⏳ カウントダウン — ${t.running?"計測中":"一時停止中"}`).addFields({name:"残り時間",value:`\`\`\`${fmt(r)}\`\`\``,inline:true},{name:"設定時間",value:`\`\`\`${fmt(t.total)}\`\`\``,inline:true}).addFields({name:"進捗",value:`\`${bar(r,t.total)}\` ${Math.round((1-p)*100)}%`}).setFooter({text:t.running?"1秒ごとに更新":"一時停止中"});
+};
+const upRow = (id, run) => new ActionRowBuilder().addComponents(
+  run ? new ButtonBuilder().setCustomId(`cup:${id}`).setLabel("一時停止").setStyle(ButtonStyle.Primary).setEmoji("⏸️")
+      : new ButtonBuilder().setCustomId(`cur:${id}`).setLabel("再開").setStyle(ButtonStyle.Success).setEmoji("▶️"),
+  new ButtonBuilder().setCustomId(`cux:${id}`).setLabel("リセット").setStyle(ButtonStyle.Danger).setEmoji("🔄")
+);
+const downRow = (id, run) => new ActionRowBuilder().addComponents(
+  run ? new ButtonBuilder().setCustomId(`cdp:${id}`).setLabel("一時停止").setStyle(ButtonStyle.Primary).setEmoji("⏸️")
+      : new ButtonBuilder().setCustomId(`cdr:${id}`).setLabel("再開").setStyle(ButtonStyle.Success).setEmoji("▶️"),
+  new ButtonBuilder().setCustomId(`cds:${id}`).setLabel("停止").setStyle(ButtonStyle.Danger).setEmoji("⏹️")
+);
 
 const editLive = async (msg, opts) => { try { msg.editReply ? await msg.editReply(opts) : await msg.edit(opts); } catch {} };
 
@@ -28,25 +40,31 @@ const startUp = async (id, replyFn, getFn) => {
   t.iv = setInterval(async () => { if (!t.msg||!t.running) return; await editLive(t.msg,{embeds:[upEmbed(t)],components:[upRow(id,true)]}); }, 1000);
 };
 
-const startDown = async (id, total, replyFn, getFn) => {
+const startDown = async (id, total, replyFn, getFn, startRemaining=null) => {
   const ex = timers.get(id);
   if (ex?.iv) clearInterval(ex.iv);
   if (ex?.type==="down" && ex.to) clearTimeout(ex.to);
-  const t = {type:"down", end:Date.now()+total*1000, total, running:true, id, msg:null, iv:null, to:null};
+  const rem = startRemaining ?? total;
+  const t = {type:"down", end:Date.now()+rem*1000, total, remaining:rem, running:true, id, msg:null, iv:null, to:null};
   timers.set(id, t);
-  await replyFn({embeds:[downEmbed(t)], components:[downRow(id)]});
+  await replyFn({embeds:[downEmbed(t)], components:[downRow(id,true)]});
   t.msg = await getFn();
-  t.iv = setInterval(async () => { if (!t.msg) return; const r=remain(t); await editLive(t.msg,{embeds:[downEmbed(t)],components:r>0?[downRow(id)]:[]}); if (r<=0&&t.iv){clearInterval(t.iv);t.iv=null;} }, 1000);
+  t.iv = setInterval(async () => {
+    if (!t.msg) return;
+    const r=remain(t);
+    await editLive(t.msg,{embeds:[downEmbed(t)],components:r>0?[downRow(id,true)]:[]});
+    if (r<=0&&t.iv){clearInterval(t.iv);t.iv=null;}
+  }, 1000);
   t.to = setTimeout(async () => {
     if (t.iv) clearInterval(t.iv); timers.delete(id);
     await editLive(t.msg, {embeds:[downEmbed(t,true)],components:[]});
     try { const ch=await client.channels.fetch(id); if(ch instanceof TextChannel) await ch.send(`⏰ @here **${fmt(total)}** のカウントダウンが終わりました！`); } catch {}
-  }, total*1000);
+  }, rem*1000);
 };
 
 client.on(Events.InteractionCreate, async (i) => {
   if (i.isButton()) {
-    const [act, id] = [i.customId.slice(0,3), i.customId.slice(4)];
+    const act=i.customId.slice(0,3), id=i.customId.slice(4);
     const t = timers.get(id);
     if (act==="cup") {
       if (!t||t.type!=="up"||!t.running){await i.reply({content:"⚠️ タイマーは動いていません。",ephemeral:true});return;}
@@ -60,6 +78,26 @@ client.on(Events.InteractionCreate, async (i) => {
     } else if (act==="cux") {
       if(t?.iv) clearInterval(t.iv); timers.delete(id);
       await i.update({embeds:[new EmbedBuilder().setColor(Colors.Grey).setTitle("🔄 リセット済み").setDescription("`/timer start` でスタートできます")],components:[]});
+    } else if (act==="cdp") {
+      if (!t||t.type!=="down"||!t.running){await i.reply({content:"⚠️ カウントダウンは動いていません。",ephemeral:true});return;}
+      t.remaining=remain(t); t.running=false;
+      if(t.iv){clearInterval(t.iv);t.iv=null;}
+      if(t.to){clearTimeout(t.to);t.to=null;}
+      await i.update({embeds:[downEmbed(t)],components:[downRow(id,false)]});
+    } else if (act==="cdr") {
+      if (!t||t.type!=="down"||t.running){await i.reply({content:"⚠️ すでに動いています。",ephemeral:true});return;}
+      t.end=Date.now()+t.remaining*1000; t.running=true;
+      t.iv=setInterval(async()=>{
+        if(!t.msg)return; const r=remain(t);
+        await editLive(t.msg,{embeds:[downEmbed(t)],components:r>0?[downRow(id,true)]:[]});
+        if(r<=0&&t.iv){clearInterval(t.iv);t.iv=null;}
+      },1000);
+      t.to=setTimeout(async()=>{
+        if(t.iv)clearInterval(t.iv); timers.delete(id);
+        await editLive(t.msg,{embeds:[downEmbed(t,true)],components:[]});
+        try{const ch=await client.channels.fetch(id);if(ch instanceof TextChannel)await ch.send(`⏰ @here **${fmt(t.total)}** のカウントダウンが終わりました！`);}catch{}
+      },t.remaining*1000);
+      await i.update({embeds:[downEmbed(t)],components:[downRow(id,true)]});
     } else if (act==="cds") {
       if(t?.iv) clearInterval(t.iv); if(t?.to) clearTimeout(t.to); timers.delete(id);
       await i.update({embeds:[new EmbedBuilder().setColor(Colors.Grey).setTitle("⏹️ 停止").setDescription("`/countdown` でスタートできます")],components:[]});
@@ -69,14 +107,21 @@ client.on(Events.InteractionCreate, async (i) => {
   if (i.isChatInputCommand()) {
     const id = i.channelId;
     if (i.commandName==="timer") {
-      if (i.options.getSubcommand()==="start") await startUp(id, o=>i.reply(o), ()=>i.fetchReply());
-      else {
-        const t=timers.get(id); if(t){if(t.iv)clearInterval(t.iv);if(t.type==="down"&&t.to)clearTimeout(t.to);if(t.msg)await editLive(t.msg,{embeds:[new EmbedBuilder().setColor(Colors.Grey).setTitle("🔄 リセット済み")],components:[]});timers.delete(id);}
+      const sub=i.options.getSubcommand();
+      if (sub==="start") await startUp(id, o=>i.reply(o), ()=>i.fetchReply());
+      else if (sub==="show") {
+        const t=timers.get(id);
+        if(!t){await i.reply({content:"⏱️ このチャンネルで動いているタイマーはありません。",ephemeral:true});return;}
+        await i.reply({embeds:[t.type==="up"?upEmbed(t):downEmbed(t)],components:[t.type==="up"?upRow(id,t.running):downRow(id,t.running)]});
+        t.msg=await i.fetchReply();
+      } else {
+        const t=timers.get(id);
+        if(t){if(t.iv)clearInterval(t.iv);if(t.type==="down"&&t.to)clearTimeout(t.to);if(t.msg)await editLive(t.msg,{embeds:[new EmbedBuilder().setColor(Colors.Grey).setTitle("🔄 リセット済み")],components:[]});timers.delete(id);}
         await i.reply({content:"🔄 リセットしました。",ephemeral:true});
       }
     } else if (i.commandName==="countdown") {
       const s=parse(i.options.getString("time",true));
-      if (!s) { await i.reply({content:"⚠️ 例: `5:00`（5分）、`90`（90秒）",ephemeral:true}); return; }
+      if (!s){await i.reply({content:"⚠️ 例: `5:00`（5分）、`90`（90秒）",ephemeral:true});return;}
       await startDown(id, s, o=>i.reply(o), ()=>i.fetchReply());
     }
   }
@@ -86,13 +131,29 @@ client.on(Events.MessageCreate, async (m) => {
   if (m.author.bot) return;
   const id=m.channelId, low=m.content.trim().toLowerCase();
   if (low==="!timer start") await startUp(id, o=>m.reply(o), async()=>(await m.channel.messages.fetch({limit:1})).first());
-  else if (low==="!timer reset") { const t=timers.get(id); if(t){if(t.iv)clearInterval(t.iv);if(t.type==="down"&&t.to)clearTimeout(t.to);timers.delete(id);} await m.reply("🔄 リセットしました。"); }
-  else { const r=m.content.match(/^!countdown\s+(.+)$/i); if(r){const s=parse(r[1].trim());if(!s){await m.reply("⚠️ 例: `!countdown 5:00`");return;} await startDown(id,s,o=>m.reply(o),async()=>(await m.channel.messages.fetch({limit:1})).first());} }
+  else if (low==="!timer reset") {
+    const t=timers.get(id);
+    if(t){if(t.iv)clearInterval(t.iv);if(t.type==="down"&&t.to)clearTimeout(t.to);timers.delete(id);}
+    await m.reply("🔄 リセットしました。");
+  } else if (low==="!timer show") {
+    const t=timers.get(id);
+    if(!t){await m.reply("⏱️ このチャンネルで動いているタイマーはありません。");return;}
+    const msg=await m.reply({embeds:[t.type==="up"?upEmbed(t):downEmbed(t)],components:[t.type==="up"?upRow(id,t.running):downRow(id,t.running)]});
+    t.msg=msg;
+  } else {
+    const r=m.content.match(/^!countdown\s+(.+)$/i);
+    if(r){const s=parse(r[1].trim());if(!s){await m.reply("⚠️ 例: `!countdown 5:00`");return;}
+    await startDown(id,s,o=>m.reply(o),async()=>(await m.channel.messages.fetch({limit:1})).first());}
+  }
 });
 
 const cmds = [
-  new SlashCommandBuilder().setName("timer").setDescription("ストップウォッチ").addSubcommand(s=>s.setName("start").setDescription("スタート")).addSubcommand(s=>s.setName("reset").setDescription("リセット")),
-  new SlashCommandBuilder().setName("countdown").setDescription("カウントダウン").addStringOption(o=>o.setName("time").setDescription("時間 例:5:00 / 90 / 1:30:00").setRequired(true)),
+  new SlashCommandBuilder().setName("timer").setDescription("ストップウォッチ")
+    .addSubcommand(s=>s.setName("start").setDescription("スタート"))
+    .addSubcommand(s=>s.setName("reset").setDescription("リセット"))
+    .addSubcommand(s=>s.setName("show").setDescription("タイマーを再表示")),
+  new SlashCommandBuilder().setName("countdown").setDescription("カウントダウン")
+    .addStringOption(o=>o.setName("time").setDescription("時間 例:5:00 / 90 / 1:30:00").setRequired(true)),
 ].map(c=>c.toJSON());
 
 client.on(Events.ClientReady, async () => {
