@@ -9,8 +9,8 @@ const elapsed = (t) => t.running ? t.e + Math.floor((Date.now()-t.t0)/1000) : t.
 const remain = (t) => t.running ? Math.max(0, Math.ceil((t.end-Date.now())/1000)) : Math.max(0,t.total);
 const bar = (c,tot,n=12) => { const f=Math.round(Math.max(0,Math.min(1,c/tot))*n); return "█".repeat(f)+"░".repeat(n-f); };
 
-const upEmbed = (t) => new EmbedBuilder().setColor(t.running?Colors.Green:Colors.Yellow).setTitle(`⏱️ ストップウォッチ — ${t.running?"計測中":"一時停止中"}`).addFields({name:"経過時間",value:`\`\`\`${fmt(elapsed(t))}\`\`\``}).setFooter({text:t.running?"3秒ごとに更新":"一時停止中"});
-const downEmbed = (t, done=false) => { if(done) return new EmbedBuilder().setColor(Colors.Red).setTitle("⏰ カウントダウン終了！").setDescription(`**${fmt(t.total)}** が経過しました`).setFooter({text:"完了"}); const r=remain(t),p=r/t.total,c=p>.5?Colors.Green:p>.25?Colors.Yellow:Colors.Red; return new EmbedBuilder().setColor(c).setTitle("⏳ カウントダウン").addFields({name:"残り時間",value:`\`\`\`${fmt(r)}\`\`\``,inline:true},{name:"設定時間",value:`\`\`\`${fmt(t.total)}\`\`\``,inline:true}).addFields({name:"進捗",value:`\`${bar(r,t.total)}\` ${Math.round((1-p)*100)}%`}).setFooter({text:"3秒ごとに更新"}); };
+const upEmbed = (t) => new EmbedBuilder().setColor(t.running?Colors.Green:Colors.Yellow).setTitle(`⏱️ ストップウォッチ — ${t.running?"計測中":"一時停止中"}`).addFields({name:"経過時間",value:`\`\`\`${fmt(elapsed(t))}\`\`\``}).setFooter({text:t.running?"1秒ごとに更新":"一時停止中"});
+const downEmbed = (t, done=false) => { if(done) return new EmbedBuilder().setColor(Colors.Red).setTitle("⏰ カウントダウン終了！").setDescription(`**${fmt(t.total)}** が経過しました`).setFooter({text:"完了"}); const r=remain(t),p=r/t.total,c=p>.5?Colors.Green:p>.25?Colors.Yellow:Colors.Red; return new EmbedBuilder().setColor(c).setTitle("⏳ カウントダウン").addFields({name:"残り時間",value:`\`\`\`${fmt(r)}\`\`\``,inline:true},{name:"設定時間",value:`\`\`\`${fmt(t.total)}\`\`\``,inline:true}).addFields({name:"進捗",value:`\`${bar(r,t.total)}\` ${Math.round((1-p)*100)}%`}).setFooter({text:"1秒ごとに更新"}); };
 const upRow = (id, run) => new ActionRowBuilder().addComponents(run ? new ButtonBuilder().setCustomId(`cup:${id}`).setLabel("一時停止").setStyle(ButtonStyle.Primary).setEmoji("⏸️") : new ButtonBuilder().setCustomId(`cur:${id}`).setLabel("再開").setStyle(ButtonStyle.Success).setEmoji("▶️"), new ButtonBuilder().setCustomId(`cux:${id}`).setLabel("リセット").setStyle(ButtonStyle.Danger).setEmoji("🔄"));
 const downRow = (id) => new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`cds:${id}`).setLabel("停止").setStyle(ButtonStyle.Danger).setEmoji("⏹️"));
 
@@ -25,7 +25,7 @@ const startUp = async (id, replyFn, getFn) => {
   timers.set(id, t);
   await replyFn({embeds:[upEmbed(t)], components:[upRow(id,true)]});
   t.msg = await getFn();
-  t.iv = setInterval(async () => { if (!t.msg||!t.running) return; await editLive(t.msg,{embeds:[upEmbed(t)],components:[upRow(id,true)]}); }, 3000);
+  t.iv = setInterval(async () => { if (!t.msg||!t.running) return; await editLive(t.msg,{embeds:[upEmbed(t)],components:[upRow(id,true)]}); }, 1000);
 };
 
 const startDown = async (id, total, replyFn, getFn) => {
@@ -36,7 +36,7 @@ const startDown = async (id, total, replyFn, getFn) => {
   timers.set(id, t);
   await replyFn({embeds:[downEmbed(t)], components:[downRow(id)]});
   t.msg = await getFn();
-  t.iv = setInterval(async () => { if (!t.msg) return; const r=remain(t); await editLive(t.msg,{embeds:[downEmbed(t)],components:r>0?[downRow(id)]:[]}); if (r<=0&&t.iv){clearInterval(t.iv);t.iv=null;} }, 3000);
+  t.iv = setInterval(async () => { if (!t.msg) return; const r=remain(t); await editLive(t.msg,{embeds:[downEmbed(t)],components:r>0?[downRow(id)]:[]}); if (r<=0&&t.iv){clearInterval(t.iv);t.iv=null;} }, 1000);
   t.to = setTimeout(async () => {
     if (t.iv) clearInterval(t.iv); timers.delete(id);
     await editLive(t.msg, {embeds:[downEmbed(t,true)],components:[]});
@@ -55,7 +55,7 @@ client.on(Events.InteractionCreate, async (i) => {
     } else if (act==="cur") {
       if (!t||t.type!=="up"||t.running){await i.reply({content:"⚠️ すでに動いています。",ephemeral:true});return;}
       t.t0=Date.now(); t.running=true;
-            t.iv=setInterval(async()=>{if(!t.msg||!t.running)return;await editLive(t.msg,{embeds:[upEmbed(t)],components:[upRow(id,true)]});},1000);
+      t.iv=setInterval(async()=>{if(!t.msg||!t.running)return;await editLive(t.msg,{embeds:[upEmbed(t)],components:[upRow(id,true)]});},1000);
       await i.update({embeds:[upEmbed(t)],components:[upRow(id,true)]});
     } else if (act==="cux") {
       if(t?.iv) clearInterval(t.iv); timers.delete(id);
